@@ -2,5 +2,5 @@ using WeightedSampling
 using Test
 
 @testset "WeightedSampling.jl" begin
-    # Write your tests here.
+    @test sample(WeightedSampler(rand(10)), 10, ordered=true) == 1:10 
 end
