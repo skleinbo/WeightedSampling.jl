@@ -1,6 +1,8 @@
 module WeightedSampling
 
-export WeightedSampler, adjust_weight!, sample, weight
+export WeightedSampler, adjust_weight!, sample, sample_heap, weight
+
+import Base: length
 
 import Random
 
@@ -23,6 +25,8 @@ struct WeightedSampler{T}
     end
 end
 
+length(ws::WeightedSampler) = ws.n
+
 """
     sample([rng], ws::WeightedSampler, k)
 
@@ -30,29 +34,51 @@ Sample `k` indices without replacement from sampler `ws`.
 
 Optionally specify a random number generator as the first argument.
 """
-sample(ws::WeightedSampler, k; ordered=false) = sample(Random.GLOBAL_RNG, ws, k; ordered)
-function sample(rng, ws::WeightedSampler, k; ordered=false)
+sample_heap(ws::WeightedSampler, k; ordered=false) = sample(Random.GLOBAL_RNG, ws, k; ordered)
+function sample_heap(rng, ws::WeightedSampler, k::T; kwargs...) where T<:Integer
+    if k==0
+        return T[]
+    end
+    if k>length(ws)
+        throw(ArgumentError("Cannot sample $k out of $(length(ws)) elements without replacement."))
+    end
+    x = Vector{T}(undef, k)
+    sample_heap!(rng, ws, x; kwargs...)
+end
+sample_heap(rng, wv::AbstractVector, args...; kwargs...) = sample_heap(rng, WeightedSampler(wv), args...; kwargs...)
+
+const sample = sample_heap
+
+function sample_heap!(rng, ws::WeightedSampler, x::AbstractArray; ordered=false, replace=false)
     u = rand(rng) * ws.heap[1]
     i = find_first_larger_node(ws, u)
+    k = length(x)
+    x[1] = i
     if k == 1
-        return i
+        return x
     end
-    samples = Vector{Int}(undef, k)
-    samples[1] = i
-    oldweights = Vector{eltype(ws.heap)}(undef, k)
-    oldweights[1] = ws.heap[ws.d+i]
-    adjust_weight!(ws, i, 0)
+    if !replace 
+        oldweights = Vector{eltype(ws.heap)}(undef, k)
+        oldweights[1] = ws.heap[ws.d+i]
+        adjust_weight!(ws, i, 0)
+    end
     for j in 2:k
         v = rand(rng) * ws.heap[1]
-        x = samples[j] = find_first_larger_node(ws, v)
-        oldweights[j] = ws.heap[ws.d+x]
-        adjust_weight!(ws, x, 0)
+        v = x[j] = find_first_larger_node(ws, v)
+        if !replace
+            oldweights[j] = ws.heap[ws.d+v]
+            adjust_weight!(ws, v, 0)
+        end
     end
-    for x in zip(samples, oldweights)
-        adjust_weight!(ws, x...)
+    if !replace
+        for v in zip(x, oldweights)
+            adjust_weight!(ws, v...)
+        end
     end
-    return ordered ? sort(samples) : samples
+    return ordered ? sort!(x) : x
 end
+sample_heap!(rng, wv::AbstractVector, args...; kwargs...) = sample_heap!(rng, WeightedSampler(wv), args...; kwargs...)
+sample_heap!(args...; kwargs...) = sample_heap!(Random.GLOBAL_RNG, args...; kwargs...)
 
 weight(ws::WeightedSampler, j) = ws.heap[ws.d+j]
 
