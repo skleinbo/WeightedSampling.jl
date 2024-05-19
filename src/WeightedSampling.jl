@@ -8,6 +8,7 @@ struct WeightedSampler{T}
     heap::Vector{T}
     d::Int
     n::Int
+    _scratch::Vector{T}
     function WeightedSampler(v::Vector{T}) where {T}
         n = length(v)
         maxlevel = ceil(Int, log2(n))
@@ -19,7 +20,7 @@ struct WeightedSampler{T}
             heap[i] = heap[2i] + heap[2i+1]
         end
 
-        new{eltype(v)}(heap, d, n)
+        new{eltype(v)}(heap, d, n, zeros(T, 2))
     end
 end
 
@@ -39,7 +40,10 @@ function sample(rng, ws::WeightedSampler, k; ordered=false)
     end
     samples = Vector{Int}(undef, k)
     samples[1] = i
-    oldweights = Vector{eltype(ws.heap)}(undef, k)
+    if size(ws._scratch, 1) < k
+        resize!(ws._scratch, k)
+    end
+    oldweights = view(ws._scratch, 1:k)
     oldweights[1] = ws.heap[ws.d+i]
     adjust_weight!(ws, i, 0)
     for j in 2:k
@@ -51,7 +55,7 @@ function sample(rng, ws::WeightedSampler, k; ordered=false)
     for x in zip(samples, oldweights)
         adjust_weight!(ws, x...)
     end
-    return ordered ? sort(samples) : samples
+    return ordered ? sort!(samples) : samples
 end
 
 weight(ws::WeightedSampler, j) = ws.heap[ws.d+j]
